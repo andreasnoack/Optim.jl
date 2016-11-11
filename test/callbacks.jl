@@ -15,7 +15,7 @@ let
             ot_run = true
             false
         end
-        optimize(f, initial_x, method = method, callback = cb, show_every=3, store_trace=true)
+        optimize(f, initial_x, method, OptimizationOptions(callback = cb, show_every=3, store_trace=true))
         @test ot_run == true
 
         os_run = false
@@ -24,9 +24,9 @@ let
             os_run = true
             false
         end
-        optimize(f, initial_x, method = method, callback = cb, show_every=3)
+        optimize(f, initial_x, method, OptimizationOptions(callback = cb, show_every=3))
         @test os_run == true
-        
+
         # Test early stopping by callbacks
         optimize(f, zeros(2), NelderMead(), OptimizationOptions(callback = x -> x.iteration == 5 ? true : false))
     end
@@ -41,7 +41,7 @@ let
             ot_run = true
             false
         end
-        optimize(d2, initial_x, method = method, callback = cb, show_every=3, store_trace=true)
+        optimize(d2, initial_x, method, OptimizationOptions(callback = cb, show_every=3, store_trace=true))
         @test ot_run == true
 
         os_run = false
@@ -50,7 +50,7 @@ let
             os_run = true
             false
         end
-        optimize(d2, initial_x, method = method, callback = cb, show_every=3)
+        optimize(d2, initial_x, method, OptimizationOptions(callback = cb, show_every=3))
         @test os_run == true
     end
 
@@ -61,7 +61,7 @@ let
             ot_run = true
             false
         end
-        optimize(d3, initial_x, method = method, callback = cb, show_every=3, store_trace=true)
+        optimize(d3, initial_x, method, OptimizationOptions(callback = cb, show_every=3, store_trace=true))
         @test ot_run == true
 
         os_run = false
@@ -70,7 +70,7 @@ let
             os_run = true
             false
         end
-        optimize(d3, initial_x, method = method, callback = cb, show_every=3)
+        optimize(d3, initial_x, method, OptimizationOptions(callback = cb, show_every=3))
         @test os_run == true
     end
 end

@@ -4,129 +4,56 @@ typealias SecondOrderSolver Union{Newton, NewtonTrustRegion}
 
 # Multivariate optimization
 function optimize(f::Function,
-                  initial_x::Array;
-                  method = NelderMead(),
-                  x_tol::Real = 1e-32,
-                  f_tol::Real = 1e-32,
-                  g_tol::Real = 1e-8,
-                  iterations::Integer = 1_000,
-                  store_trace::Bool = false,
-                  show_trace::Bool = false,
-                  extended_trace::Bool = false,
-                  show_every::Integer = 1,
-                  autodiff::Bool = false,
-                  callback = nothing)
-    options = OptimizationOptions(;
-        x_tol = x_tol, f_tol = f_tol, g_tol = g_tol,
-        iterations = iterations, store_trace = store_trace,
-        show_trace = show_trace, extended_trace = extended_trace,
-        callback = callback, show_every = show_every,
-        autodiff = autodiff)
-    optimize(f, initial_x, method, options)
+                  initial_x::Array,
+                  options::OptimizationOptions = OptimizationOptions())
+    optimize(f, initial_x, NelderMead())
 end
 
 function optimize(f::Function,
                   g!::Function,
-                  initial_x::Array;
-                  method = LBFGS(),
-                  x_tol::Real = 1e-32,
-                  f_tol::Real = 1e-32,
-                  g_tol::Real = 1e-8,
-                  iterations::Integer = 1_000,
-                  store_trace::Bool = false,
-                  show_trace::Bool = false,
-                  extended_trace::Bool = false,
-                  show_every::Integer = 1,
-                  callback = nothing)
-    options = OptimizationOptions(;
-        x_tol = x_tol, f_tol = f_tol, g_tol = g_tol,
-        iterations = iterations, store_trace = store_trace,
-        show_trace = show_trace, extended_trace = extended_trace,
-        callback = callback, show_every = show_every)
-    optimize(f, g!, initial_x, method, options)
+                  initial_x::Array)
+    optimize(f, g!, initial_x, LBFGS())
+end
+function optimize(f::Function,
+                  g!::Function,
+                  initial_x::Array)
+    optimize(DifferentiableFunction(f, g!), initial_x, LBFGS())
 end
 
 function optimize(f::Function,
                   g!::Function,
                   h!::Function,
-                  initial_x::Array;
-                  method = Newton(),
-                  x_tol::Real = 1e-32,
-                  f_tol::Real = 1e-32,
-                  g_tol::Real = 1e-8,
-                  iterations::Integer = 1_000,
-                  store_trace::Bool = false,
-                  show_trace::Bool = false,
-                  extended_trace::Bool = false,
-                  show_every::Integer = 1,
-                  callback = nothing)
-    options = OptimizationOptions(;
-        x_tol = x_tol, f_tol = f_tol, g_tol = g_tol,
-        iterations = iterations, store_trace = store_trace,
-        show_trace = show_trace, extended_trace = extended_trace,
-        callback = callback, show_every = show_every)
-    optimize(f, g!, h!, initial_x, method, options)
+                  initial_x::Array,
+                  method::Optimizer = Newton())
+    optimize(f, g!, h!, initial_x, method, OptimizationOptions())
 end
 
 function optimize(d::DifferentiableFunction,
-                  initial_x::Array;
-                  method = LBFGS(),
-                  x_tol::Real = 1e-32,
-                  f_tol::Real = 1e-32,
-                  g_tol::Real = 1e-8,
-                  iterations::Integer = 1_000,
-                  store_trace::Bool = false,
-                  show_trace::Bool = false,
-                  extended_trace::Bool = false,
-                  show_every::Integer = 1,
-                  callback = nothing)
-    options = OptimizationOptions(;
-        x_tol = x_tol, f_tol = f_tol, g_tol = g_tol,
-        iterations = iterations, store_trace = store_trace,
-        show_trace = show_trace, extended_trace = extended_trace,
-        callback = callback, show_every = show_every)
-    optimize(d, initial_x, method, options)
+                  initial_x::Array)
+    optimize(d, initial_x, LBFGS())
 end
 
 function optimize(d::TwiceDifferentiableFunction,
-                  initial_x::Array;
-                  method = Newton(),
-                  x_tol::Real = 1e-32,
-                  f_tol::Real = 1e-32,
-                  g_tol::Real = 1e-8,
-                  iterations::Integer = 1_000,
-                  store_trace::Bool = false,
-                  show_trace::Bool = false,
-                  extended_trace::Bool = false,
-                  show_every::Integer = 1,
-                  callback = nothing)
-    options = OptimizationOptions(;
-        x_tol = x_tol, f_tol = f_tol, g_tol = g_tol,
-        iterations = iterations, store_trace = store_trace,
-        show_trace = show_trace, extended_trace = extended_trace,
-        callback = callback, show_every = show_every)
-    optimize(d, initial_x, method, options)
+                  initial_x::Array)
+    optimize(d, initial_x, Newton())
 end
 
 function optimize(d,
                   initial_x::Array,
-                  method::Optimizer,
-                  options::OptimizationOptions = OptimizationOptions())
-    optimize(d, initial_x, method, options)
+                  method::Optimizer)
+    optimize(d, initial_x, method, OptimizationOptions())
 end
-
-function optimize(f::Function,
-                  g!::Function,
+function optimize(f,
+                  g!,
                   initial_x::Array,
                   method::Optimizer,
                   options::OptimizationOptions = OptimizationOptions())
     d = DifferentiableFunction(f, g!)
     optimize(d, initial_x, method, options)
 end
-
-function optimize(f::Function,
-                  g!::Function,
-                  h!::Function,
+function optimize(f,
+                  g!,
+                  h!,
                   initial_x::Array,
                   method::Optimizer,
                   options::OptimizationOptions = OptimizationOptions())
