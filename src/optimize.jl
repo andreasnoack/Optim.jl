@@ -5,7 +5,7 @@ typealias SecondOrderSolver Union{Newton, NewtonTrustRegion}
 # Multivariate optimization
 function optimize(f::Function,
                   initial_x::Array,
-                  options::OptimizationOptions = OptimizationOptions())
+                  options::Options = Options())
     optimize(f, initial_x, NelderMead())
 end
 
@@ -25,7 +25,7 @@ function optimize(f::Function,
                   h!::Function,
                   initial_x::Array,
                   method::Optimizer = Newton())
-    optimize(f, g!, h!, initial_x, method, OptimizationOptions())
+    optimize(f, g!, h!, initial_x, method, Options())
 end
 
 function optimize(d::DifferentiableFunction,
@@ -41,13 +41,13 @@ end
 function optimize(d,
                   initial_x::Array,
                   method::Optimizer)
-    optimize(d, initial_x, method, OptimizationOptions())
+    optimize(d, initial_x, method, Options())
 end
 function optimize(f,
                   g!,
                   initial_x::Array,
                   method::Optimizer,
-                  options::OptimizationOptions = OptimizationOptions())
+                  options::Options = Options())
     d = DifferentiableFunction(f, g!)
     optimize(d, initial_x, method, options)
 end
@@ -56,7 +56,7 @@ function optimize(f,
                   h!,
                   initial_x::Array,
                   method::Optimizer,
-                  options::OptimizationOptions = OptimizationOptions())
+                  options::Options = Options())
     d = TwiceDifferentiableFunction(f, g!, h!)
     optimize(d, initial_x, method, options)
 end
@@ -64,12 +64,12 @@ end
 function optimize{T, M <: Union{FirstOrderSolver, SecondOrderSolver}}(f::Function,
                   initial_x::Array{T},
                   method::M,
-                  options::OptimizationOptions)
+                  options::Options)
     if !options.autodiff
         if M <: FirstOrderSolver
             d = DifferentiableFunction(f)
         else
-            error("No gradient or Hessian was provided. Either provide a gradient and Hessian, set autodiff = true in the OptimizationOptions if applicable, or choose a solver that doesn't require a Hessian.")
+            error("No gradient or Hessian was provided. Either provide a gradient and Hessian, set autodiff = true in the Options if applicable, or choose a solver that doesn't require a Hessian.")
         end
     else
         g!(x, out) = ForwardDiff.gradient!(out, f, x)
@@ -94,9 +94,9 @@ end
 function optimize(d::DifferentiableFunction,
                   initial_x::Array,
                   method::Newton,
-                  options::OptimizationOptions)
+                  options::Options)
     if !options.autodiff
-        error("No Hessian was provided. Either provide a Hessian, set autodiff = true in the OptimizationOptions if applicable, or choose a solver that doesn't require a Hessian.")
+        error("No Hessian was provided. Either provide a Hessian, set autodiff = true in the Options if applicable, or choose a solver that doesn't require a Hessian.")
     else
         h! = (x, out) -> ForwardDiff.hessian!(out, d.f, x)
     end
@@ -106,9 +106,9 @@ end
 function optimize(d::DifferentiableFunction,
                   initial_x::Array,
                   method::NewtonTrustRegion,
-                  options::OptimizationOptions)
+                  options::Options)
     if !options.autodiff
-        error("No Hessian was provided. Either provide a Hessian, set autodiff = true in the OptimizationOptions if applicable, or choose a solver that doesn't require a Hessian.")
+        error("No Hessian was provided. Either provide a Hessian, set autodiff = true in the Options if applicable, or choose a solver that doesn't require a Hessian.")
     else
         h! = (x, out) -> ForwardDiff.hessian!(out, d.f, x)
     end
@@ -133,7 +133,7 @@ end
 
 after_while!(d, state, method, options) = nothing
 
-function optimize{T, M<:Optimizer}(d, initial_x::Array{T}, method::M, options::OptimizationOptions)
+function optimize{T, M<:Optimizer}(d, initial_x::Array{T}, method::M, options::Options)
     t0 = time() # Initial time stamp used to control early stopping by options.time_limit
 
     if length(initial_x) == 1 && typeof(method) <: NelderMead
@@ -209,7 +209,7 @@ function optimize{T, M<:Optimizer}(d, initial_x::Array{T}, method::M, options::O
                                             state.h_calls)
 end
 
-# Univariate OptimizationOptions
+# Univariate Options
 function optimize{T <: AbstractFloat}(f::Function,
                                       lower::T,
                                       upper::T;

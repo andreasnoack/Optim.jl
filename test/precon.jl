@@ -29,7 +29,7 @@ let
         for Optimiser in (GradientDescent, ConjugateGradient, LBFGS)
             for (P, wwo) in zip((ID, Plap), (" WITHOUT", " WITH"))
                 results = Optim.optimize(df, copy(initial_x),
-                                         Optimiser(P = P),Optim.OptimizationOptions(
+                                         Optimiser(P = P),Optim.Options(
                                          f_tol = 1e-32, g_tol = GRTOL ))
                 println(Optimiser, wwo,
                         " preconditioning : g_calls = ", results.g_calls,
