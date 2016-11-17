@@ -7,11 +7,11 @@
 # x_{t} = y_{t} + (t - 1.0) / (t + 2.0) * (y_{t} - y_{t - 1})
 
 
-immutable AcceleratedGradientDescent <: Optimizer
-    linesearch::Function
+immutable AcceleratedGradientDescent{Tf<:Function} <: Optimizer
+    linesearch!::Tf
 end
 
-AcceleratedGradientDescent(; linesearch::Function = LineSearches.hagerzhang!) =
+AcceleratedGradientDescent{Tf<:Function}(; linesearch::Tf=LineSearches.hagerzhang!) =
   AcceleratedGradientDescent(linesearch)
 
 type AcceleratedGradientDescentState{T}
@@ -61,7 +61,7 @@ function update_state!{T}(d, state::AcceleratedGradientDescentState{T}, method::
 
     # Determine the distance of movement along the search line
     state.alpha, f_update, g_update =
-      method.linesearch(d, state.x, state.s, state.x_ls, state.g_ls, state.lsr, state.alpha, state.mayterminate)
+      method.linesearch!(d, state.x, state.s, state.x_ls, state.g_ls, state.lsr, state.alpha, state.mayterminate)
     state.f_calls, state.g_calls = state.f_calls + f_update, state.g_calls + g_update
 
     # Make one move in the direction of the gradient

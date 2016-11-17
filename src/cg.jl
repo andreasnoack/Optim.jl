@@ -53,19 +53,21 @@
 #   for cgdescent and alphamax for linesearch_hz.
 
 
-immutable ConjugateGradient{T} <: Optimizer
+immutable ConjugateGradient{T, Tfp<:Function, Tfl<:Function} <: Optimizer
     eta::Float64
     P::T
-    precondprep!::Function
-    linesearch::Function
+    precondprep!::Tfp
+    linesearch!::Tfl
 end
 
 function ConjugateGradient(;
-                           linesearch::Function = LineSearches.hagerzhang!,
-                           eta::Real = 0.4,
-                           P::Any = nothing,
+                           linesearch=LineSearches.hagerzhang!,
+                           eta = 0.4,
+                           P = nothing,
                            precondprep! = (P, x) -> nothing)
-    ConjugateGradient{typeof(P)}(Float64(eta),
+                           @show typeof(linesearch)<:Function
+                           @show typeof(precondprep!)<:Function
+    ConjugateGradient(Float64(eta),
                                  P, precondprep!,
                                  linesearch)
 end
@@ -149,7 +151,7 @@ function update_state!{T}(df, state::ConjugateGradientState{T}, method::Conjugat
 
         # Determine the distance of movement along the search line
         state.alpha, f_update, g_update =
-          method.linesearch(df, state.x, state.s, state.x_ls, state.g_ls, state.lsr, state.alpha, state.mayterminate)
+          method.linesearch!(df, state.x, state.s, state.x_ls, state.g_ls, state.lsr, state.alpha, state.mayterminate)
         state.f_calls, state.g_calls = state.f_calls + f_update, state.g_calls + g_update
 
         # Maintain a record of previous position

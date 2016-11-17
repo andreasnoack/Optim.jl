@@ -1,12 +1,12 @@
 # Translation from our variables to Nocedal and Wright's
 # JMW's dx <=> NW's s
 # JMW's dg <=> NW' y
-immutable BFGS <: Optimizer
-    linesearch::Function
+immutable BFGS{Tf<:Function} <: Optimizer
+    linesearch!::Tf
     initial_invH::Function
 end
 
-BFGS(; linesearch::Function = LineSearches.hagerzhang!, initial_invH = x -> eye(eltype(x), length(x))) =
+BFGS{Tf<:Function}(; linesearch::Tf = LineSearches.hagerzhang!, initial_invH = x -> eye(eltype(x), length(x))) =
   BFGS(linesearch, initial_invH)
 
 type BFGSState{T}
@@ -74,7 +74,7 @@ function update_state!{T}(d, state::BFGSState{T}, method::BFGS)
 
     # Determine the distance of movement along the search line
     state.alpha, f_update, g_update =
-      method.linesearch(d, state.x, state.s, state.x_ls, state.g_ls, state.lsr, state.alpha, state.mayterminate)
+      method.linesearch!(d, state.x, state.s, state.x_ls, state.g_ls, state.lsr, state.alpha, state.mayterminate)
     state.f_calls, state.g_calls = state.f_calls + f_update, state.g_calls + g_update
 
     # Maintain a record of previous position

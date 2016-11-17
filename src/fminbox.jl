@@ -102,7 +102,7 @@ end
 
 immutable Fminbox <: Optimizer end
 
-function optimize{T<:AbstractFloat}(
+function optimize{T<:AbstractFloat, Tf<:Function}(
         df::DifferentiableFunction,
         initial_x::Array{T},
         l::Array{T},
@@ -117,7 +117,7 @@ function optimize{T<:AbstractFloat}(
         extended_trace::Bool = false,
         callback = nothing,
         show_every = 1,
-        linesearch::Function = LineSearches.hagerzhang!,
+        linesearch::Tf = LineSearches.hagerzhang!,
         eta::Real = convert(T,0.4),
         mu0::T = convert(T, NaN),
         mufactor::T = convert(T, 0.001),

@@ -1,7 +1,7 @@
-immutable GradientDescent{T} <: Optimizer
-    linesearch::Function
+immutable GradientDescent{T, Tfl<:Function, Tfp<:Function} <: Optimizer
+    linesearch!::Tfl
     P::T
-    precondprep!::Function
+    precondprep!::Tfp
 end
 
 GradientDescent(; linesearch::Function = LineSearches.hagerzhang!,
@@ -49,7 +49,7 @@ function update_state!{T}(d, state::GradientDescentState{T}, method::GradientDes
 
     # Determine the distance of movement along the search line
     state.alpha, f_update, g_update =
-    method.linesearch(d, state.x, state.s, state.x_ls, state.g_ls,
+    method.linesearch!(d, state.x, state.s, state.x_ls, state.g_ls,
                        state.lsr, state.alpha, state.mayterminate)
     state.f_calls, state.g_calls = state.f_calls + f_update, state.g_calls + g_update
 

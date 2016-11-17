@@ -17,12 +17,12 @@ that does the actual work. Say you want to contribute a solver called
 `Minim`, then your `src/minim.jl` file would look something like
 
 ```
-immutable Minim{T} <: Optimizer
-    linesearch::Function
+immutable Minim{Tf<:Function, T} <: Optimizer
+    linesearch!::Tf
     minim_parameter::T
 end
 
-Minim(; linesearch::Function = LineSearches.hagerzhang!, minim_parameter = 1.0) =
+Minim{Tf<:Function}(; linesearch::T = LineSearches.hagerzhang!, minim_parameter = 1.0) =
   Minim(linesearch, minim_parameter)
 
 type MinimState{T}

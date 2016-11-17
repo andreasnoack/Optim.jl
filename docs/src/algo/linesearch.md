@@ -27,8 +27,8 @@ First, run `Newton` with the default line search algorithm:
 using Optim, LineSearches
 prob = Optim.UnconstrainedProblems.examples["Rosenbrock"]
 
-algo_hz = Newton(;linesearch = LineSearches.hagerzhang!)
-res_hz = Optim.optimize(prob.f, prob.g!, prob.h!, prob.initial_x, method=algo_hz)
+algo_hz = Newton(;linesearch=LineSearches.hagerzhang!)
+res_hz = Optim.optimize(prob.f, prob.g!, prob.h!, prob.initial_x, algo_hz)
 ```
 
 This gives the result
@@ -50,8 +50,8 @@ Results of Optimization Algorithm
 
 Now we can try `Newton` with the More-Thuente line search:
 ``` julia
-algo_mt = Newton(;linesearch = LineSearches.morethuente!)
-res_mt = Optim.optimize(prob.f, prob.g!, prob.h!, prob.initial_x, method=algo_mt)
+algo_mt = Newton(;linesearch=LineSearches.morethuente!)
+res_mt = Optim.optimize(prob.f, prob.g!, prob.h!, prob.initial_x, algo_mt)
 ```
 
 This gives the following result, reducing the number of function and gradient calls:
