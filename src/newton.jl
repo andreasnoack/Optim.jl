@@ -1,9 +1,9 @@
 immutable Newton <: Optimizer
-    linesearch!::Function
+    linesearch::Function
 end
 
-Newton(; linesearch!::Function = LineSearches.hagerzhang!) =
-  Newton(linesearch!)
+Newton(; linesearch::Function = LineSearches.hagerzhang!) =
+  Newton(linesearch)
 
 type NewtonState{T}
     @add_generic_fields()
@@ -63,7 +63,7 @@ function initial_state{T}(method::Newton, options, d, initial_x::Array{T})
 
         # Determine the distance of movement along the search line
         state.alpha, f_update, g_update =
-          method.linesearch!(d, state.x, state.s, state.x_ls, state.g_ls, state.lsr, state.alpha, state.mayterminate)
+          method.linesearch(d, state.x, state.s, state.x_ls, state.g_ls, state.lsr, state.alpha, state.mayterminate)
         state.f_calls, state.g_calls = state.f_calls + f_update, state.g_calls + g_update
 
         # Maintain a record of previous position

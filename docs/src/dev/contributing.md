@@ -18,12 +18,12 @@ that does the actual work. Say you want to contribute a solver called
 
 ```
 immutable Minim{T} <: Optimizer
-    linesearch!::Function
+    linesearch::Function
     minim_parameter::T
 end
 
-Minim(; linesearch!::Function = LineSearches.hagerzhang!, minim_parameter = 1.0) =
-  Minim(linesearch!, minim_parameter)
+Minim(; linesearch::Function = LineSearches.hagerzhang!, minim_parameter = 1.0) =
+  Minim(linesearch, minim_parameter)
 
 type MinimState{T}
   @add_generic_fields()

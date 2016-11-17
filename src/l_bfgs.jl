@@ -62,17 +62,17 @@ end
 
 immutable LBFGS{T} <: Optimizer
     m::Int
-    linesearch!::Function
+    linesearch::Function
     P::T
     precondprep!::Function
     extrapolate::Bool
     snap2one::Tuple
 end
 
-LBFGS(; m::Integer = 10, linesearch!::Function = LineSearches.hagerzhang!,
+LBFGS(; m::Integer = 10, linesearch::Function = LineSearches.hagerzhang!,
                         P=nothing, precondprep! = (P, x) -> nothing,
                         extrapolate::Bool=false, snap2one = (0.75, Inf)) =
-      LBFGS(Int(m), linesearch!, P, precondprep!, extrapolate, snap2one)
+      LBFGS(Int(m), linesearch, P, precondprep!, extrapolate, snap2one)
 
 type LBFGSState{T}
     @add_generic_fields()
@@ -167,7 +167,7 @@ function update_state!{T}(d, state::LBFGSState{T}, method::LBFGS)
 
     # Determine the distance of movement along the search line
     state.alpha, f_update, g_update =
-      method.linesearch!(d, state.x, state.s, state.x_ls, state.g_ls, state.lsr,
+      method.linesearch(d, state.x, state.s, state.x_ls, state.g_ls, state.lsr,
                      alphaguess, state.mayterminate)
     state.f_calls, state.g_calls = state.f_calls + f_update, state.g_calls + g_update
 
