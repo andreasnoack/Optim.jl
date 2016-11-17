@@ -70,9 +70,9 @@ immutable LBFGS{T, Tfl<:Function, Tfp<:Function} <: Optimizer
 end
 
 LBFGS{Tfl<:Function}(; m::Integer = 10, linesearch::Tfl = LineSearches.hagerzhang!,
-                        P=nothing, precondprep! = (P, x) -> nothing,
+                        P=nothing, precondprep=(P, x) -> nothing,
                         extrapolate::Bool=false, snap2one = (0.75, Inf)) =
-      LBFGS(Int(m), linesearch, P, precondprep!, extrapolate, snap2one)
+      LBFGS(Int(m), linesearch, P, precondprep, extrapolate, snap2one)
 
 type LBFGSState{T}
     @add_generic_fields()

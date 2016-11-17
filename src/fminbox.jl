@@ -121,13 +121,13 @@ function optimize{T<:AbstractFloat, Tf<:Function}(
         eta::Real = convert(T,0.4),
         mu0::T = convert(T, NaN),
         mufactor::T = convert(T, 0.001),
-        precondprep! = (P, x, l, u, mu) -> precondprepbox!(P, x, l, u, mu),
+        precondprep = (P, x, l, u, mu) -> precondprepbox!(P, x, l, u, mu),
         optimizer = ConjugateGradient,
         optimizer_o = OptimizationOptions(store_trace = store_trace,
                                           show_trace = show_trace,
                                           extended_trace = extended_trace),
         nargs...)
-
+    const precondprep! = precondprep # to keep the keyword !-free
     optimizer == Newton && warning("Newton is not supported as the inner optimizer. Defaulting to ConjugateGradient.")
     x = copy(initial_x)
     fbarrier = (x, gbarrier) -> barrier_box(x, gbarrier, l, u)
@@ -181,13 +181,13 @@ function optimize{T<:AbstractFloat, Tf<:Function}(
         end
         pcp = (P, x) -> precondprep!(P, x, l, u, mu)
         if optimizer == ConjugateGradient
-            _optimizer = optimizer(eta = eta, linesearch = linesearch, P = P, precondprep! = pcp)
+            _optimizer = optimizer(eta = eta, linesearch = linesearch, P = P, precondprep = pcp)
         elseif optimizer in (LBFGS, GradientDescent)
-            _optimizer = optimizer(linesearch = linesearch, P = P, precondprep! = pcp)
+            _optimizer = optimizer(linesearch = linesearch, P = P, precondprep = pcp)
         elseif optimizer in (NelderMead, SimulatedAnnealing)
             _optimizer = optimizer()
         elseif optimizer == Newton
-            _optimizer = ConjugateGradient(eta = eta, linesearch = linesearch, P = P, precondprep! = pcp)
+            _optimizer = ConjugateGradient(eta = eta, linesearch = linesearch, P = P, precondprep = pcp)
         else
             _optimizer = optimizer(linesearch = linesearch)
         end

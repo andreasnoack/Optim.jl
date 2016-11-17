@@ -22,7 +22,7 @@ Finally, it is possible to update the preconditioner as the state variable `x`
 changes. This is done through  `precondprep!` which is passed to the
 optimizers as kw-argument, e.g.,
 ```jl
-   method=ConjugateGradient(P = precond(100), precondprep! = precond(100))
+   ConjugateGradient(P=precond(100), precondprep=precond(100))
 ```
 though in this case it would always return the same matrix.
 (See `fminbox.jl` for a more natural example.)
@@ -41,8 +41,8 @@ plap1 = ForwardDiff.gradient(plap)
 precond(n) = spdiagm((-ones(n-1), 2*ones(n), -ones(n-1)), (-1,0,1), n, n)*(n+1)
 df = DifferentiableFunction(x -> plap([0; X; 0]),
                             (x, g) -> copy!(g, (plap1([0; X; 0]))[2:end-1]))
-result = Optim.optimize(df, zeros(100), method = ConjugateGradient(P = nothing))
-result = Optim.optimize(df, zeros(100), method = ConjugateGradient(P = precond(100)))
+result = Optim.optimize(df, zeros(100), ConjugateGradient(P = nothing))
+result = Optim.optimize(df, zeros(100), ConjugateGradient(P = precond(100)))
 ```
 The former optimize call converges at a slower rate than the latter. Looking at a
  plot of the 2D version of the function shows the problem.

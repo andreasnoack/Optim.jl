@@ -64,11 +64,9 @@ function ConjugateGradient(;
                            linesearch=LineSearches.hagerzhang!,
                            eta = 0.4,
                            P = nothing,
-                           precondprep! = (P, x) -> nothing)
-                           @show typeof(linesearch)<:Function
-                           @show typeof(precondprep!)<:Function
+                           precondprep=(P, x) -> nothing)
     ConjugateGradient(Float64(eta),
-                                 P, precondprep!,
+                                 P, precondprep,
                                  linesearch)
 end
 

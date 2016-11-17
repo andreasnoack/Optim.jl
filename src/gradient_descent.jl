@@ -5,8 +5,8 @@ immutable GradientDescent{T, Tfl<:Function, Tfp<:Function} <: Optimizer
 end
 
 GradientDescent(; linesearch::Function = LineSearches.hagerzhang!,
-                P = nothing, precondprep! = (P, x) -> nothing) =
-                    GradientDescent(linesearch, P, precondprep!)
+                P = nothing, precondprep=(P, x) -> nothing) =
+                    GradientDescent(linesearch, P, precondprep)
 
 type GradientDescentState{T}
     @add_generic_fields()
