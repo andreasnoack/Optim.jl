@@ -17,6 +17,11 @@ let
         storage[2, 2] = eta
     end
 
+    # tests for regressions in #235
+    optimize(f1, [127.0, 921.0], Optim.Options())
+    optimize(f1, g1, [127.0, 921.0], Optim.Options())
+    optimize(f1, g1, h1, [127.0, 921.0], Optim.Options())
+
     results = optimize(f1, g1, h1, [127.0, 921.0])
     @assert Optim.g_converged(results)
     @assert norm(Optim.minimizer(results) - [0.0, 0.0]) < 0.01

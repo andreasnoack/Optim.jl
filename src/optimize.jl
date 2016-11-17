@@ -1,48 +1,40 @@
 typealias FirstOrderSolver Union{AcceleratedGradientDescent, ConjugateGradient, GradientDescent,
                                  MomentumGradientDescent, BFGS, LBFGS}
 typealias SecondOrderSolver Union{Newton, NewtonTrustRegion}
-
-# Multivariate optimization
+# Fallback for case without gradients and no method
 function optimize(f::Function,
                   initial_x::Array,
                   options::Options = Options())
-    optimize(f, initial_x, NelderMead())
+    optimize(f, initial_x, NelderMead(), options)
 end
-
+# Fallbacks for case without hessians and no method
 function optimize(f::Function,
                   g!::Function,
-                  initial_x::Array)
-    optimize(f, g!, initial_x, LBFGS())
+                  initial_x::Array,
+                  options::Options = Options())
+    d = DifferentiableFunction(f, g!)
+    optimize(d, initial_x, LBFGS(), options)
 end
-function optimize(f::Function,
-                  g!::Function,
-                  initial_x::Array)
-    optimize(DifferentiableFunction(f, g!), initial_x, LBFGS())
+function optimize(d::DifferentiableFunction,
+                  initial_x::Array,
+                  options::Options = Options())
+    optimize(d, initial_x, LBFGS(), options)
 end
-
+# Fallbacks for case with gradients and hessians and no method
 function optimize(f::Function,
                   g!::Function,
                   h!::Function,
                   initial_x::Array,
-                  method::Optimizer = Newton())
-    optimize(f, g!, h!, initial_x, method, Options())
+                  options::Options = Options())
+    d = TwiceDifferentiableFunction(f, g!, h!)
+    optimize(d, initial_x, Newton(), options)
 end
-
-function optimize(d::DifferentiableFunction,
-                  initial_x::Array)
-    optimize(d, initial_x, LBFGS())
-end
-
 function optimize(d::TwiceDifferentiableFunction,
-                  initial_x::Array)
-    optimize(d, initial_x, Newton())
-end
-
-function optimize(d,
                   initial_x::Array,
-                  method::Optimizer)
-    optimize(d, initial_x, method, Options())
+                  options::Options = Options())
+    optimize(d, initial_x, Newton(), options)
 end
+# Objective, gradient, and method as functions with method and with or without options
 function optimize(f,
                   g!,
                   initial_x::Array,
@@ -51,6 +43,7 @@ function optimize(f,
     d = DifferentiableFunction(f, g!)
     optimize(d, initial_x, method, options)
 end
+# Objective, gradient, and method as functions with method and with or without options
 function optimize(f,
                   g!,
                   h!,
@@ -60,11 +53,11 @@ function optimize(f,
     d = TwiceDifferentiableFunction(f, g!, h!)
     optimize(d, initial_x, method, options)
 end
-
+# Objective and first or second order solver but no gradient provided
 function optimize{T, M <: Union{FirstOrderSolver, SecondOrderSolver}}(f::Function,
                   initial_x::Array{T},
                   method::M,
-                  options::Options)
+                  options::Options = Options())
     if !options.autodiff
         if M <: FirstOrderSolver
             d = DifferentiableFunction(f)
@@ -90,11 +83,11 @@ function optimize{T, M <: Union{FirstOrderSolver, SecondOrderSolver}}(f::Functio
 
     optimize(d, initial_x, method, options)
 end
-
+# Second order solver with no hessian provided
 function optimize(d::DifferentiableFunction,
                   initial_x::Array,
-                  method::Newton,
-                  options::Options)
+                  method::SecondOrderSolver,
+                  options::Options = Options())
     if !options.autodiff
         error("No Hessian was provided. Either provide a Hessian, set autodiff = true in the Options if applicable, or choose a solver that doesn't require a Hessian.")
     else
@@ -103,37 +96,27 @@ function optimize(d::DifferentiableFunction,
     optimize(TwiceDifferentiableFunction(d.f, d.g!, d.fg!, h!), initial_x, method, options)
 end
 
-function optimize(d::DifferentiableFunction,
-                  initial_x::Array,
-                  method::NewtonTrustRegion,
-                  options::Options)
-    if !options.autodiff
-        error("No Hessian was provided. Either provide a Hessian, set autodiff = true in the Options if applicable, or choose a solver that doesn't require a Hessian.")
-    else
-        h! = (x, out) -> ForwardDiff.hessian!(out, d.f, x)
-    end
-    optimize(TwiceDifferentiableFunction(d.f, d.g!, d.fg!, h!), initial_x, method, options)
-end
-
+# Update the gradient
 update_g!(d, state, method) = nothing
-
 function update_g!{M<:Union{FirstOrderSolver, Newton}}(d, state, method::M)
     # Update the function value and gradient
     state.f_x_previous, state.f_x = state.f_x, d.fg!(state.x, state.g)
     state.f_calls, state.g_calls = state.f_calls + 1, state.g_calls + 1
 end
 
-update_h!(d, state, method) = nothing
-
 # Update the Hessian
+update_h!(d, state, method) = nothing
 function update_h!(d, state, method::SecondOrderSolver)
     d.h!(state.x, state.H)
     state.h_calls += 1
 end
 
 after_while!(d, state, method, options) = nothing
-
-function optimize{T, M<:Optimizer}(d, initial_x::Array{T}, method::M, options::Options)
+# Actual optimize template
+function optimize{T, M<:Optimizer}(d,
+                                   initial_x::Array{T},
+                                   method::M,
+                                   options::Options = Options())
     t0 = time() # Initial time stamp used to control early stopping by options.time_limit
 
     if length(initial_x) == 1 && typeof(method) <: NelderMead
