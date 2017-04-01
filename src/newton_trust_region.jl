@@ -45,6 +45,9 @@ function p_sq_norm{T}(lambda::T, min_i, n, qg, H_eig)
     p_sum
 end
 
+eigfact2(A::Symmetric{T} where T <: Real) =
+    LinAlg.Eigen{eltype(A),real(eltype(A)),Matrix{eltype(A)},Vector{real(eltype(A))}}(LAPACK.syev!('V', 'L', copy(A.data))...)
+
 # Choose a point in the trust region for the next step using
 # the interative (nearly exact) method of section 4.3 of Nocedal and Wright.
 # This is appropriate for Hessians that you factorize quickly.
@@ -79,15 +82,17 @@ function solve_tr_subproblem!{T}(gr::Vector{T},
 
     # Note that currently the eigenvalues are only sorted if H is perfectly
     # symmetric.  (Julia issue #17093)
-    H_eig = eigfact(Symmetric(H))
+    # H_eig = eigfact(Symmetric(H))
+    H_eig = eigfact2(Symmetric(H))
     min_H_ev, max_H_ev = H_eig[:values][1], H_eig[:values][n]
-    H_ridged = copy(H)
+    H_ridged = copy(Symmetric(H))
 
     # Cache the inner products between the eigenvectors and the gradient.
-    qg = similar(gr)
-    for i=1:n
-        qg[i] = vecdot(H_eig[:vectors][:, i], gr)
-    end
+    # qg = similar(gr)
+    # for i=1:n
+        # qg[i] = vecdot(H_eig[:vectors][:, i], gr)
+    # end
+    qg = H_eig[:vectors]'*gr
 
     # These values describe the outcome of the subproblem.  They will be
     # set below and returned at the end.
@@ -99,7 +104,8 @@ function solve_tr_subproblem!{T}(gr::Vector{T},
         # No shrinkage is necessary: -(H \ gr) is the minimizer
         interior = true
         reached_solution = true
-        s[:] = -(H_eig[:vectors] ./ H_eig[:values]') * H_eig[:vectors]' * gr
+        # s[:] = -(H_eig[:vectors] ./ H_eig[:values]') * H_eig[:vectors]' * gr
+        BLAS.gemv!('N', -one(T), H_eig[:vectors], qg ./ H_eig[:values], zero(T), s)
         lambda = zero(T)
     else
         interior = false
@@ -137,7 +143,7 @@ function solve_tr_subproblem!{T}(gr::Vector{T},
                 # the first.
                 for i=1:n
                     s[i] = tau * H_eig[:vectors][i, 1]
-                    for k=(min_H_ev_multiplicity + 1):n
+                    for k = (min_H_ev_multiplicity + 1):n
                         s[i] = s[i] +
                                qg[k] * H_eig[:vectors][i, k] / (H_eig[:values][k] + lambda)
                     end
@@ -149,30 +155,35 @@ function solve_tr_subproblem!{T}(gr::Vector{T},
             # Algorithim 4.3 of N&W, with s insted of p_l for consistency with
             # Optim.jl
 
-            for i=1:n
+            for i in 1:n
                 H_ridged[i, i] = H[i, i] + lambda
             end
 
             reached_solution = false
+            q_l = similar(s)
             for iter in 1:max_iters
                 lambda_previous = lambda
 
-                # Version 0.5 requires an exactly symmetric matrix, but
-                # version 0.4 does not have this function signature for chol().
-                R = VERSION < v"0.5-" ? chol(H_ridged): chol(Hermitian(H_ridged))
-                s[:] = -R \ (R' \ gr)
-                q_l = R' \ s
-                norm2_s = vecdot(s, s)
-                lambda_update = norm2_s * (sqrt(norm2_s) - delta) / (delta * vecdot(q_l, q_l))
+                R = chol(Hermitian(H_ridged))
+                @inbounds for i in eachindex(gr)
+                    s[i] = -gr[i]
+                end
+                A_ldiv_B!(R, Ac_ldiv_B!(R, s))
+                # s[:] = -R \ (R' \ gr)
+                # q_l = R' \ s
+                copy!(q_l, s)
+                Ac_ldiv_B!(R, q_l)
+                norm2_s = dot(s, s)
+                lambda_update = norm2_s * (sqrt(norm2_s) - delta) / (delta * dot(q_l, q_l))
                 lambda += lambda_update
 
                 # Check that lambda is not less than lambda_lb, and if so, go
                 # half the way to lambda_lb.
                 if lambda < (lambda_lb + 1e-8)
-                    lambda = 0.5 * (lambda_previous - lambda_lb) + lambda_lb
+                    lambda = (lambda_previous - lambda_lb)/2 + lambda_lb
                 end
 
-                for i=1:n
+                for i in 1:n
                     H_ridged[i, i] = H[i, i] + lambda
                 end
 
@@ -184,7 +195,7 @@ function solve_tr_subproblem!{T}(gr::Vector{T},
         end
     end
 
-    m = vecdot(gr, s) + 0.5 * vecdot(s, H * s)
+    m = dot(gr, s) + dot(s, H * s)/2
 
     return m, interior, lambda, hard_case, reached_solution
 end
