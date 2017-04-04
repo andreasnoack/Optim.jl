@@ -24,6 +24,7 @@ end
         H = randn(n, n)
         H += H'
 
+        state = Optim.initial_state()
         s = zeros(n)
         m, interior = Optim.solve_tr_subproblem!(gr, H, 1., s, max_iters=100)
 
