@@ -74,7 +74,7 @@ end
 
 function assess_convergence(state::NewtonTrustRegionState, d, options)
     x_converged, f_converged, g_converged, converged, f_increased = false, false, false, false, false
-    if state.rho > state.eta
+    if state.ρ > state.η
         # Accept the point and check convergence
         x_converged,
         f_converged,
