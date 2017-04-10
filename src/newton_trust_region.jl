@@ -121,7 +121,67 @@ for (syev, elty) in
     end
 end
 
-immutable SymmetricEigen{T<:Real}
+function Base.LinAlg.cholfact!(C::LinAlg.Cholesky{T,S}, A::Hermitian{T,S}) where {T,S}
+    if C.uplo != A.uplo
+        throw(ArgumentError("uplo fields are not the same"))
+    end
+    copy!(C.factors, A.data)
+    cholfact!(Hermitian(C.factors, Symbol(A.uplo)))
+    return C
+end
+function getR(C::LinAlg.Cholesky)
+    if C.uplo == :L
+        throw(ArgumentError("only possible to extract R factor when factorization is stored in upper triangle"))
+    end
+    return UpperTriangular(C.factors)
+end
+
+type Cholesky2{T} <: Factorization{T}
+    factors::Matrix{T}
+    uplo::Char
+    info::BlasInt
+end
+
+function cholfact2!(A::Symmetric{<:BlasReal})
+    AF, theinfo = LinAlg.LAPACK.potrf!(A.uplo, A.data)
+    Cholesky2(AF, A.uplo, theinfo)
+end
+cholfact2(A::Symmetric) = cholfact2!(copy(A))
+
+function cholfact2!(C::Cholesky2{T}, A::Symmetric{T,<:StridedMatrix}) where T
+    if C.uplo != A.uplo
+        throw(ArgumentError("uplo fields are not the same"))
+    end
+    factors = C.factors
+    copy!(factors, A.data)
+    AF, theinfo = LinAlg.LAPACK.potrf!(A.uplo, factors)
+    C.info = theinfo
+    return C
+end
+
+Base.size(C::Cholesky2, i::Integer) = size(C.factors, i)
+
+function getR(C::Cholesky2)
+    if C.uplo == :L
+        throw(ArgumentError("only possible to extract R factor when factorization is stored in upper triangle"))
+    end
+    return UpperTriangular(C.factors)
+end
+function getL(C::Cholesky2)
+    if C.uplo == :R
+        throw(ArgumentError("only possible to extract R factor when factorization is stored in lower triangle"))
+    end
+    return LowerTriangular(C.factors)
+end
+
+Base.LinAlg.isposdef(C::Cholesky2) = C.info == 0
+
+function Base.LinAlg.A_ldiv_B!(C::Cholesky2{T}, B::StridedVecOrMat{T}) where T
+    @assert C.info == 0
+    return LAPACK.potrs!(C.uplo, C.factors, B)
+end
+
+immutable SymmetricEigen{T<:Real} <: Factorization{T}
     values::Vector{T}
     vectors::Matrix{T}
     workbuffer::Vector{T}
@@ -141,14 +201,9 @@ type NewtonTrustRegionState{T,N,G}
     g_previous::G
     f_x_previous::T
     s::Array{T,N}
-    q_l::Array{T,N}
-    H_ridged::Matrix{T}
-    qg::Vector{T}
-    H_eig::SymmetricEigen{T}
-    F::LinAlg.Cholesky{T,Matrix{T}}
-    hard_case::Bool
-    reached_subproblem_solution::Bool
-    interior::Bool
+    z::Vector{T}
+    HλI::Symmetric{T,Matrix{T}}
+    F::Cholesky2{T}
     δ::T
     λ::T
     η::T
@@ -200,21 +255,6 @@ function p_sq_norm{T}(λ::T, min_i, n, qg, H_eig)
         p_sum += qg[i]^2 / (λ + H_eig.values[i])^2
     end
     p_sum
-end
-
-function Base.LinAlg.cholfact!(C::LinAlg.Cholesky{T,S}, A::Hermitian{T,S}) where {T,S}
-    if C.uplo != A.uplo
-        throw(ArgumentError("uplo fields are not the same"))
-    end
-    copy!(C.factors, A.data)
-    cholfact!(Hermitian(C.factors, Symbol(A.uplo)))
-    return C
-end
-function getR(C::LinAlg.Cholesky)
-    if C.uplo == :L
-        throw(ArgumentError("only possible to extract R factor when factorization is stored in upper triangle"))
-    end
-    return UpperTriangular(C.factors)
 end
 
 # Choose a point in the trust region for the next step using
@@ -365,9 +405,189 @@ function solve_tr_subproblem!{T}(gr::Vector{T},
         end
     end
 
-    m = dot(gr, s) + dot(s, H * s)/2
+    state.λ                           = λ
 
-    return m, interior, λ, hard_case, reached_solution
+    return dot(gr, s) + dot(s, H * s)/2, interior
+end
+
+function svdminvec!(out::Vector, L::LowerTriangular)
+    n = size(L, 1)
+    LL = L.data
+    @assert n == length(out)
+    @inbounds begin
+        out[1] = inv(LL[1,1])
+        for i in 2:n
+            ltx = zero(eltype(L))
+            for j in 1:i - 1
+                ltx += LL[i,j]*out[j]
+            end
+            out[i] = (-sign(ltx) - ltx)/LL[i,i]
+        end
+    end
+
+    nrm = norm(out)
+    scale!(out, inv(nrm))
+
+    # Calculate norm of L'x
+    nrm = zero(nrm)
+    for j in 1:n
+        acc = zero(nrm)
+        for i in j:n
+            @inbounds acc += LL[i,j]'*out[i]
+        end
+        nrm += acc*acc
+    end
+
+    return sqrt(nrm)
+end
+
+@inline function diagmin(A::StridedMatrix)
+    n = LinAlg.checksquare(A)
+    mn = typemax(eltype(A))
+    @inbounds for i in 1:n
+        mn = min(mn, A[i,i])
+    end
+    return mn
+end
+
+function quadform(C::Cholesky2, x::StridedVector)
+    n = length(x)
+    @assert size(C, 1) == n
+    nrm = zero(promote_type(eltype(C), eltype(x)))
+    if C.uplo == 'L'
+        LL = C.factors
+        for j in 1:n
+            acc = zero(nrm)
+            for i in j:n
+                @inbounds acc += LL[i,j]'*x[i]
+            end
+            nrm += acc*acc
+        end
+    else
+        error("not implemented yet")
+    end
+    return nrm
+end
+
+function solve_tr_subproblem2!{T}(gr::Vector{T},
+                                 H::Matrix{T},
+                                 state::NewtonTrustRegionState;
+                                 max_iters::Int=20,
+                                 σ₁ = 0.1,
+                                 σ₂ = 0.0,
+                                 debug = false)
+
+    tol0      = sqrt(eps(T))
+    tolδlower = 0.9
+    tolδupper = 1.1
+
+    # See p. 566 for discussion of values for σ₁ and σ₂
+    n     = LinAlg.checksquare(H)
+    s     = state.s
+    δ     = state.δ
+    HλI   = state.HλI
+    F     = state.F
+    z     = state.z
+    δ²    = δ^2
+    nrmgr = norm(gr)
+    nrmH1 = norm(H, 1)
+
+    # Initial safeguard values
+    λs = -diagmin(H)
+    λl = max(0, λs, nrmgr/δ - nrmH1)
+    λu = nrmgr/δ + nrmH1
+    λ  = zero(λs)
+
+    # Algorithm 3.14 of Moré and Sorensen
+    ## 1. Safeguard λ
+    for k in 1:max_iters
+
+        λ = max(λ, λl)
+        λ = min(λ, λu)
+        if λ <= λs
+            λ = max(λu/1000, sqrt(λl*λu))
+        end
+
+        debug && @show λ
+        ## 2. Is positive definite
+        copy!(HλI.data, H)
+        for i in 1:n
+            HλI[i,i] += λ
+        end
+        cholfact2!(F, HλI)
+        L = getL(F)
+        if isposdef(F)
+
+            ## 3. Solve LLtp = -g
+            scale!(s, gr, -one(T))
+            A_ldiv_B!(L, s)
+            nrmLs  = norm(s)
+            Ac_ldiv_B!(L, s)
+            nrms  = norm(s)
+            nrms² = nrms^2
+
+            # 4. Done or hard case?
+            if nrms < δ*tolδlower && λ > tol0
+                debug && println("HARD CASE")
+                # z[1] = 1
+                # z = F\z
+                # scale!(z, inv(norm(z)))
+                # z = svd(H + λ*I)[1][:,end]
+                nrmLz = svdminvec!(z, L)
+                # nrmLz = norm(L'z)
+                sz = dot(s, z)
+                τ  = (δ² - nrms²)/(sz + sign(sz)*sqrt(sz^2 + δ² - nrms²))
+
+                ## 5. Update safeguard parameters (hard case)
+                λu = min(λu, λ)
+                λs = max(λs, λ - nrmLz^2)
+                λl = max(λl, λs)
+# @show norm(L'*z); @show norm(L'*p); @show τ; @show nrms; @show norm(p + τ*z)
+                ## 6. Check convergence
+                if abs2(nrmLz*τ) <= σ₁*(2 - σ₁)*max(σ₂, nrmLs^2 + λ*δ²)
+                    debug && println("DONE!")
+                    LinAlg.axpy!(τ, z, s)
+                    # return dot(gr, s) + dot(s, H * s)/2, false
+                    return dot(gr, s) + (quadform(F, s) - λ*nrms²)/2, false
+                end
+            else
+                debug && println("@show PD CASE")
+                ## 5. Update safeguard parameters (normal positive definite case)
+                λl = max(λl, λ)
+
+                ## 6. Check convergence
+                if abs(δ - nrms) < σ₁*δ || (λ <= tol0 && nrms <= δ)
+                    debug && println("DONE")
+                    # return dot(gr, s) + dot(s, H*s)/2, nrms < δ
+                    return dot(gr, s) + (quadform(F, s) - λ*nrms²)/2, nrms < δ
+                end
+            end
+
+            ## 7. Update λ
+            copy!(z, s)
+            A_ldiv_B!(L, z)
+            λ += abs2(nrms/norm(z))*((nrms - δ)/δ)
+        else
+            debug && println("ID CASE")
+            ## 5. Update safeguard parameters (normal indefinite case)
+            λl = max(λl, λ)
+            fill!(z, 0)
+            z[F.info] = 1
+            μ = L[F.info,F.info] # Gay's notation
+            L[F.info,F.info] = 1
+            # z[1:F.info] = LowerTriangular(L[1:F.info,1:F.info])'\z[1:F.info]
+            Ac_ldiv_B!(LowerTriangular(view(L.data, 1:F.info, 1:F.info)), view(z, 1:F.info))
+            λs = max(λs, λ - μ/dot(z,z))
+            λl = max(λl, λs)
+
+            ## 6. Check convergence
+            ## Nothing to do since H + λI not PD
+
+            ## 7. Update λ
+            λ = λs
+        end
+    end
+    error("no convergence in $max_iters iterations")
 end
 
 immutable NewtonTrustRegion{T <: Real} <: Optimizer
@@ -398,9 +618,6 @@ function initial_state{T}(method::NewtonTrustRegion, options, d, initial_x::Arra
     δ = copy(method.initial_δ)
 
     # Record attributes of the subproblem in the trace.
-    hard_case = false
-    reached_subproblem_solution = true
-    interior = true
     λ = NaN
     value_gradient!(d, initial_x)
     hessian!(d, initial_x)
@@ -412,13 +629,8 @@ function initial_state{T}(method::NewtonTrustRegion, options, d, initial_x::Arra
                          T(NaN), # Store previous f in state.f_x_previous
                          similar(initial_x), # Maintain current search direction in state.s
                          similar(initial_x), # buffer of same type and size as stats.s
-                         Matrix{T}(n,n),     # buffer of H_ridged
-                         similar(initial_x), # buffer qg
-                         SymmetricEigen{T}(Vector{T}(n), Matrix{T}(n,n), Vector{BlasInt}((syev_worksize(T, n) + 2)*n)), # worksize only correct for syev solver
-                         LinAlg.Cholesky{T,Matrix{T}}(Matrix{T}(n,n), 'U'), # buffer for Cholesky
-                         hard_case,
-                         reached_subproblem_solution,
-                         interior,
+                         Symmetric(Matrix{T}(n,n), :L),     # buffer of HλI
+                         Cholesky2{T}(Matrix{T}(n,n), 'L', 0), # buffer for Cholesky
                          T(δ),
                          λ,
                          method.η, # η
@@ -430,21 +642,25 @@ function update_state!{T}(d, state::NewtonTrustRegionState{T}, method::NewtonTru
 
 
     # Find the next step direction.
-    m, state.interior, state.λ, state.hard_case, state.reached_subproblem_solution =
-        solve_tr_subproblem!(gradient(d), NLSolversBase.hessian(d), state)
+    m, interior = solve_tr_subproblem2!(gradient(d), NLSolversBase.hessian(d), state, debug = false)
+
+    # hoist
+    x = state.x
+    s = state.s
 
     # Maintain a record of previous position
     copy!(state.x_previous, state.x)
 
     # Update current position
     @simd for i in 1:state.n
-        @inbounds state.x[i] = state.x[i] + state.s[i]
+        @inbounds x[i] += s[i]
     end
 
     # Update the function value and gradient
-    copy!(state.g_previous, gradient(d))
+    # copy!(state.g_previous, gradient(d))
     state.f_x_previous = value(d)
-    value_gradient!(d, state.x)
+    value!(d, state.x)
+    # value_gradient!(d, state.x)
 
 
     # Update the trust region size based on the discrepancy between
@@ -465,7 +681,7 @@ function update_state!{T}(d, state::NewtonTrustRegionState{T}, method::NewtonTru
 
     if state.ρ < method.ρ_lower
         state.δ *= 0.25
-    elseif (state.ρ > method.ρ_upper) && (!state.interior)
+    elseif (state.ρ > method.ρ_upper) && !interior
         state.δ = min(2 * state.δ, method.δ_hat)
     else
         # else leave δ unchanged.
@@ -490,7 +706,8 @@ function update_state!{T}(d, state::NewtonTrustRegionState{T}, method::NewtonTru
 
         d.f_x = state.f_x_previous
         copy!(state.x, state.x_previous)
-        copy!(gradient(d), state.g_previous)
+        copy!(d.last_x_f, x)
+        # copy!(gradient(d), state.g_previous)
     end
 
     false

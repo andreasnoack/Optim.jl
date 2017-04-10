@@ -105,7 +105,7 @@ function optimize(d::OnceDifferentiable,
 end
 
 update_g!(d, state, method) = nothing
-function update_g!{M<:Union{FirstOrderSolver, Newton}}(d, state, method::M)
+function update_g!{M<:Union{FirstOrderSolver, SecondOrderSolver}}(d, state, method::M)
     # Update the function value and gradient
     value_gradient!(d, state.x)
 end
