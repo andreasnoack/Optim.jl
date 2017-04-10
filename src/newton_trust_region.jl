@@ -195,10 +195,9 @@ function eigfact2!(F::SymmetricEigen{T}, A::Symmetric{T}) where T<:BlasReal
 end
 eigfact2(A::Symmetric{<:Real,<:StridedMatrix}) = eigfact2!(copy(A))
 
-type NewtonTrustRegionState{T,N,G}
+type NewtonTrustRegionState{T,N}
     @add_generic_fields()
     x_previous::Array{T,N}
-    g_previous::G
     f_x_previous::T
     s::Array{T,N}
     z::Vector{T}
@@ -469,6 +468,9 @@ function quadform(C::Cholesky2, x::StridedVector)
     return nrm
 end
 
+A_ldiv_B2!(L::LowerTriangular{T,<:StridedMatrix} , b::StridedVector{T}) where T<:BlasReal = BLAS.trsv!('L', 'N', 'N', L.data, b)
+Ac_ldiv_B2!(L::LowerTriangular{T,<:StridedMatrix}, b::StridedVector{T}) where T<:BlasReal = BLAS.trsv!('L', 'T', 'N', L.data, b)
+
 function solve_tr_subproblem2!{T}(gr::Vector{T},
                                  H::Matrix{T},
                                  state::NewtonTrustRegionState;
@@ -520,9 +522,9 @@ function solve_tr_subproblem2!{T}(gr::Vector{T},
 
             ## 3. Solve LLtp = -g
             scale!(s, gr, -one(T))
-            A_ldiv_B!(L, s)
+            A_ldiv_B2!(L, s)
             nrmLs  = norm(s)
-            Ac_ldiv_B!(L, s)
+            Ac_ldiv_B2!(L, s)
             nrms  = norm(s)
             nrms² = nrms^2
 
@@ -565,7 +567,7 @@ function solve_tr_subproblem2!{T}(gr::Vector{T},
 
             ## 7. Update λ
             copy!(z, s)
-            A_ldiv_B!(L, z)
+            A_ldiv_B2!(L, z)
             λ += abs2(nrms/norm(z))*((nrms - δ)/δ)
         else
             debug && println("ID CASE")
@@ -576,7 +578,7 @@ function solve_tr_subproblem2!{T}(gr::Vector{T},
             μ = L[F.info,F.info] # Gay's notation
             L[F.info,F.info] = 1
             # z[1:F.info] = LowerTriangular(L[1:F.info,1:F.info])'\z[1:F.info]
-            Ac_ldiv_B!(LowerTriangular(view(L.data, 1:F.info, 1:F.info)), view(z, 1:F.info))
+            Ac_ldiv_B2!(LowerTriangular(view(L.data, 1:F.info, 1:F.info)), view(z, 1:F.info))
             λs = max(λs, λ - μ/dot(z,z))
             λl = max(λl, λs)
 
@@ -615,7 +617,7 @@ function initial_state{T}(method::NewtonTrustRegion, options, d, initial_x::Arra
     @assert(method.ρ_lower < method.ρ_upper, "must have ρ_lower < ρ_upper")
     @assert(method.ρ_lower >= 0.)
     # Keep track of trust region sizes
-    δ = copy(method.initial_δ)
+    δ = method.initial_δ
 
     # Record attributes of the subproblem in the trace.
     λ = NaN
@@ -625,8 +627,8 @@ function initial_state{T}(method::NewtonTrustRegion, options, d, initial_x::Arra
                          length(initial_x),
                          copy(initial_x), # Maintain current state in state.x
                          similar(initial_x), # Maintain previous state in state.x_previous
-                         similar(gradient(d)), # Store previous gradient in state.g_previous
-                         T(NaN), # Store previous f in state.f_x_previous
+                         T(NaN),
+                         # similar(gradient(d)), # Store previous gradient in state.g_previous
                          similar(initial_x), # Maintain current search direction in state.s
                          similar(initial_x), # buffer of same type and size as stats.s
                          Symmetric(Matrix{T}(n,n), :L),     # buffer of HλI
@@ -645,11 +647,12 @@ function update_state!{T}(d, state::NewtonTrustRegionState{T}, method::NewtonTru
     m, interior = solve_tr_subproblem2!(gradient(d), NLSolversBase.hessian(d), state, debug = false)
 
     # hoist
-    x = state.x
-    s = state.s
+    x          = state.x
+    x_previous = state.x_previous
+    s          = state.s
 
     # Maintain a record of previous position
-    copy!(state.x_previous, state.x)
+    copy!(x_previous, state.x)
 
     # Update current position
     @simd for i in 1:state.n
@@ -657,10 +660,8 @@ function update_state!{T}(d, state::NewtonTrustRegionState{T}, method::NewtonTru
     end
 
     # Update the function value and gradient
-    # copy!(state.g_previous, gradient(d))
     state.f_x_previous = value(d)
     value!(d, state.x)
-    # value_gradient!(d, state.x)
 
 
     # Update the trust region size based on the discrepancy between
@@ -694,20 +695,15 @@ function update_state!{T}(d, state::NewtonTrustRegionState{T}, method::NewtonTru
         # δ is smaller than the current step.  Otherwise you waste
         # steps reducing δ by constant factors while each solution
         # will be the same.
-        # δ = sqrt(mapreduce(t -> abs2(t[1] - t[2]), +, zip(state.x, state.x_previous)))/4
-        x, x_previous = state.x, state.x_previous
         δ = sqrt(zero(T))
         @inbounds @simd for i in eachindex(x)
             δ += abs2(x[i] - x_previous[i])
         end
         state.δ = sqrt(δ)/4
-        # x_diff = state.x - state.x_previous
-        # δ = 0.25 * sqrt(vecdot(x_diff, x_diff))
 
         d.f_x = state.f_x_previous
-        copy!(state.x, state.x_previous)
+        copy!(x, x_previous)
         copy!(d.last_x_f, x)
-        # copy!(gradient(d), state.g_previous)
     end
 
     false

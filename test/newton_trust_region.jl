@@ -5,6 +5,7 @@
     gr = [-0.74637,0.52388]
     H = [0.945787 -3.07884; -3.07884 -1.27762]
 
+    state = Optim.NewtonTrustRegionState()
     s = zeros(n)
     m, interior = Optim.solve_tr_subproblem!(gr, H, 1., s, max_iters=100)
 
