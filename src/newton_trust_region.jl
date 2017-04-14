@@ -148,15 +148,23 @@ function cholfact2!(A::Symmetric{<:BlasReal})
 end
 cholfact2(A::Symmetric) = cholfact2!(copy(A))
 
-function cholfact2!(C::Cholesky2{T}, A::Symmetric{T,<:StridedMatrix}) where T
-    if C.uplo != A.uplo
-        throw(ArgumentError("uplo fields are not the same"))
+### inlining might make it possible for the compiler to remove the Cholesky2 wrapper in solve_tr_subproblem2!
+@inline function cholfact2!(C::Cholesky2{T}, A::Symmetric{T,<:StridedMatrix}) where T
+    if C.uplo == 'L' && A.uplo == 'U'
+        factors = C.factors
+        AA      = A.data
+        for j in 1:size(A, 1) - 1
+            for i in j + 1:size(A, 1)
+                @inbounds factors[i, j] = AA[j,i]
+            end
+        end
+        # copy!(factors, A.data)
+        AF, theinfo = LinAlg.LAPACK.potrf!(C.uplo, factors)
+        C.info = theinfo
+        return C
+    else
+        throw(ArgumentError("not handled yet"))
     end
-    factors = C.factors
-    copy!(factors, A.data)
-    AF, theinfo = LinAlg.LAPACK.potrf!(A.uplo, factors)
-    C.info = theinfo
-    return C
 end
 
 Base.size(C::Cholesky2, i::Integer) = size(C.factors, i)
@@ -201,8 +209,8 @@ type NewtonTrustRegionState{T,N}
     f_x_previous::T
     s::Array{T,N}
     z::Vector{T}
-    HλI::Symmetric{T,Matrix{T}}
-    F::Cholesky2{T}
+    d::Vector{T}
+    # F::Cholesky2{T}
     δ::T
     λ::T
     η::T
@@ -471,6 +479,19 @@ end
 A_ldiv_B2!(L::LowerTriangular{T,<:StridedMatrix} , b::StridedVector{T}) where T<:BlasReal = BLAS.trsv!('L', 'N', 'N', L.data, b)
 Ac_ldiv_B2!(L::LowerTriangular{T,<:StridedMatrix}, b::StridedVector{T}) where T<:BlasReal = BLAS.trsv!('L', 'T', 'N', L.data, b)
 
+# function restore!(H, d, λ = 0)
+#     LinAlg.copytri!(H, 'U')
+#     for i in 1:length(d)
+#         @inbounds H[i,i] = d[i] + λ
+#     end
+# end
+function restore!(H, d)
+    LinAlg.copytri!(H, 'U')
+    for i in 1:length(d)
+        @inbounds H[i,i] = d[i]
+    end
+end
+
 function solve_tr_subproblem2!{T}(gr::Vector{T},
                                  H::Matrix{T},
                                  state::NewtonTrustRegionState;
@@ -485,14 +506,22 @@ function solve_tr_subproblem2!{T}(gr::Vector{T},
 
     # See p. 566 for discussion of values for σ₁ and σ₂
     n     = LinAlg.checksquare(H)
+    Hsym  = Symmetric(H)
     s     = state.s
+    d     = state.d
     δ     = state.δ
-    HλI   = state.HλI
-    F     = state.F
+    # F     = state.F
+    F     = Cholesky2{eltype(H)}(H, 'L', 0)
+    L     = getL(F)
     z     = state.z
     δ²    = δ^2
     nrmgr = norm(gr)
     nrmH1 = norm(H, 1)
+
+    ## store diagonal of H in d
+    for i in 1:n
+        @inbounds d[i] = H[i,i]
+    end
 
     # Initial safeguard values
     λs = -diagmin(H)
@@ -512,12 +541,12 @@ function solve_tr_subproblem2!{T}(gr::Vector{T},
 
         debug && @show λ
         ## 2. Is positive definite
-        copy!(HλI.data, H)
+        # copy!(HλI.data, H)
+        ### Set diagonal
         for i in 1:n
-            HλI[i,i] += λ
+            @inbounds H[i,i] = d[i] + λ
         end
-        cholfact2!(F, HλI)
-        L = getL(F)
+        cholfact2!(F, Hsym)
         if isposdef(F)
 
             ## 3. Solve LLtp = -g
@@ -549,8 +578,11 @@ function solve_tr_subproblem2!{T}(gr::Vector{T},
                 if abs2(nrmLz*τ) <= σ₁*(2 - σ₁)*max(σ₂, nrmLs^2 + λ*δ²)
                     debug && println("DONE!")
                     LinAlg.axpy!(τ, z, s)
+                    m = dot(gr, s) + (quadform(F, s) - λ*nrms²)/2
+                    ### restore H
+                    restore!(H, d)
                     # return dot(gr, s) + dot(s, H * s)/2, false
-                    return dot(gr, s) + (quadform(F, s) - λ*nrms²)/2, false
+                    return m, false
                 end
             else
                 debug && println("@show PD CASE")
@@ -560,8 +592,10 @@ function solve_tr_subproblem2!{T}(gr::Vector{T},
                 ## 6. Check convergence
                 if abs(δ - nrms) < σ₁*δ || (λ <= tol0 && nrms <= δ)
                     debug && println("DONE")
+                    m = dot(gr, s) + (quadform(F, s) - λ*nrms²)/2
+                    restore!(H, d)
                     # return dot(gr, s) + dot(s, H*s)/2, nrms < δ
-                    return dot(gr, s) + (quadform(F, s) - λ*nrms²)/2, nrms < δ
+                    return m, nrms < δ
                 end
             end
 
@@ -630,8 +664,8 @@ function initial_state{T}(method::NewtonTrustRegion, options, d, initial_x::Arra
                          # similar(gradient(d)), # Store previous gradient in state.g_previous
                          similar(initial_x), # Maintain current search direction in state.s
                          similar(initial_x), # buffer of same type and size as stats.s
-                         Symmetric(Matrix{T}(n,n), :L),     # buffer of HλI
-                         Cholesky2{T}(Matrix{T}(n,n), 'L', 0), # buffer for Cholesky
+                         similar(initial_x), # buffer for diagonal
+                         # Cholesky2{T}(Matrix{T}(n,n), 'L', 0), # buffer for Cholesky
                          T(δ),
                          λ,
                          method.η, # η
