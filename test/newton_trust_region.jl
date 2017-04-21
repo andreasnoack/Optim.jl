@@ -1,48 +1,55 @@
 @testset "Newton Trust Region" begin
+
+model(s, gr, H) = dot(gr, s) + dot(s, H * s)/2
+
 @testset "Subproblems I" begin
     # verify that solve_tr_subproblem! finds the minimum
     n = 2
     gr = [-0.74637,0.52388]
     H = [0.945787 -3.07884; -3.07884 -1.27762]
 
-    state = Optim.NewtonTrustRegionState()
     s = zeros(n)
-    m, interior = Optim.solve_tr_subproblem!(gr, H, 1., s, max_iters=100)
+    d = similar(s)
+    z = similar(s)
+    m, interior = Optim.solve_tr_subproblem!(gr, H, s, d, z, 1.0, max_iters=100)
 
     for j in 1:10
         bad_s = rand(n)
         bad_s ./= norm(bad_s)  # boundary
-        model(s2) = (gr' * s2)[] + .5 * (s2' * H * s2)[]
-        @test model(s) <= model(bad_s) + 1e-8
+        @test model(s, gr, H) <= model(bad_s, gr, H) + 1e-8
     end
 end
 
-@testset "Subproblems II" begin
+@testset "Subproblems II" for n in 2:10
     # random Hessians--verify that solve_tr_subproblem! finds the minimum
-    for i in 1:10000
-        n = rand(1:10)
+    s = zeros(n)
+    d = similar(s)
+    z = similar(s)
+
+    for i in 1:1000
         gr = randn(n)
-        H = randn(n, n)
+        H  = randn(n, n)
         H += H'
+        σ₁ = rand()/10
 
-        state = Optim.initial_state()
-        s = zeros(n)
-        m, interior = Optim.solve_tr_subproblem!(gr, H, 1., s, max_iters=100)
+        m, interior = Optim.solve_tr_subproblem!(gr, H, s, d, z, 1., max_iters=100, σ₁ = σ₁)
 
-        model(s2) = (gr' * s2)[] + .5 * (s2' * H * s2)[]
-        @test model(s) <= model(zeros(n)) + 1e-8  # origin
+        ψstar = model(zeros(n), gr, H)
+        @test model(s, gr, H) - ψstar  <= σ₁*(2 - σ₁)*abs(ψstar) # origin
 
         for j in 1:10
             bad_s = rand(n)
             bad_s ./= norm(bad_s)  # boundary
-            @test model(s) <= model(bad_s) + 1e-8
+            ψstar = model(zeros(n), gr, H)
+            @test model(s, gr, H) - ψstar  <= σ₁*(2 - σ₁)*abs(ψstar)
             bad_s .*= rand()  # interior
-            @test model(s) <= model(bad_s) + 1e-8
+            ψstar = model(zeros(n), gr, H)
+            @test model(s, gr, H) - ψstar  <= σ₁*(2 - σ₁)*abs(ψstar)
         end
     end
 end
 
-@testset "Test problems" begin
+@testset "Test problems" for σ₁ in exp10.((-1, -5, -10))
     #######################################
     # First test the subproblem.
     srand(42)
@@ -53,67 +60,36 @@ end
     U = H_eig[:vectors]
 
     gr = zeros(n)
-    gr[1] = 1.
+    gr[1] = 1
     s = zeros(Float64, n)
+    d = similar(s)
+    z = similar(s)
 
     true_s = -H \ gr
     s_norm2 = dot(true_s, true_s)
-    true_m = dot(true_s, gr) + 0.5 * dot(true_s, H * true_s)
+    true_m = dot(true_s, gr) + dot(true_s, H * true_s)/2
 
     # An interior solution
-    delta = sqrt(s_norm2) + 1.0
-    m, interior, lambda, hard_case, reached_solution =
-        Optim.solve_tr_subproblem!(gr, H, delta, s)
+    delta = sqrt(s_norm2) + 1
+    m, interior, lambda, hard_case =
+        Optim.solve_tr_subproblem!(gr, H, s, d, z, delta, σ₁ = σ₁)
     @test interior
     @test !hard_case
-    @test reached_solution
-    @test abs(m - true_m) < 1e-12
+    @test m - true_m <= abs(true_m)*σ₁*(2 - σ₁)
     @test norm(s - true_s) < 1e-12
     @test abs(lambda) < 1e-12
 
     # A boundary solution
     delta = 0.5 * sqrt(s_norm2)
-    m, interior, lambda, hard_case, reached_solution =
-        Optim.solve_tr_subproblem!(gr, H, delta, s)
+    m, interior, lambda, hard_case =
+        Optim.solve_tr_subproblem!(gr, H, s, d, z, delta, σ₁ = σ₁)
     @test !interior
     @test !hard_case
-    @test reached_solution
     @test m > true_m
-    @test abs(norm(s) - delta) < 1e-12
+    @test abs(norm(s) - delta) < σ₁
     @test lambda > 0
 
-    # A "hard case" where the gradient is orthogonal to the lowest eigenvector
-
-    # Test the checking
-    hard_case, lambda_1_multiplicity =
-        Optim.check_hard_case_candidate([-1., 2., 3.], [0., 1., 1.])
-    @test hard_case
-    @test lambda_1_multiplicity == 1
-
-    hard_case, lambda_1_multiplicity =
-        Optim.check_hard_case_candidate([-1., -1., 3.], [0., 0., 1.])
-    @test hard_case
-    @test lambda_1_multiplicity == 2
-
-    hard_case, lambda_1_multiplicity =
-        Optim.check_hard_case_candidate([-1., -1., -1.], [0., 0., 0.])
-    @test hard_case
-    @test lambda_1_multiplicity == 3
-
-    hard_case, lambda_1_multiplicity =
-        Optim.check_hard_case_candidate([1., 2., 3.], [0., 1., 1.])
-    @test !hard_case
-
-    hard_case, lambda_1_multiplicity =
-        Optim.check_hard_case_candidate([-1., -1., -1.], [0., 0., 1.])
-    @test !hard_case
-
-    hard_case, lambda_1_multiplicity =
-        Optim.check_hard_case_candidate([-1., 2., 3.], [1., 1., 1.])
-    @test !hard_case
-
-
-    # Now check an actual had case problem
+    # Now check an actual hard case problem
     L = zeros(Float64, n) + 0.1
     L[1] = -1.
     H = U * diagm(L) * U'
@@ -126,14 +102,11 @@ end
     true_m = dot(true_s, gr) + 0.5 * dot(true_s, H * true_s)
 
     delta = 0.5 * sqrt(s_norm2)
-    m, interior, lambda, hard_case, reached_solution =
-        Optim.solve_tr_subproblem!(gr, H, delta, s)
+    m, interior, lambda, hard_case =
+        Optim.solve_tr_subproblem!(gr, H, s, d, z, delta)
     @test !interior
     @test hard_case
-    @test reached_solution
-    @test abs(lambda + L[1]) < 1e-4
     @test abs(norm(s) - delta) < 1e-12
-
 
     #######################################
     # Next, test on actual optimization problems.
@@ -192,7 +165,7 @@ end
 
 @testset "PR #341" begin
     # verify that no PosDef exception is thrown
-    Optim.solve_tr_subproblem!([0, 1.], [-1000 0; 0. -999], 1e-2, ones(2))
+    Optim.solve_tr_subproblem!([0, 1.], [-1000 0; 0. -999], ones(2), zeros(2), zeros(2), 1e-2)
 end
 
 end

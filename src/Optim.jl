@@ -48,6 +48,9 @@ module Optim
     # Generic stuff
     include("utilities/generic.jl")
 
+    # LinAlg (should only live here temporarily)
+    include("utilities/linalg.jl")
+
     # Maxdiff
     include("utilities/maxdiff.jl")
 
